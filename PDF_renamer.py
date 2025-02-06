@@ -1,34 +1,56 @@
+# To install all required dependencies, run:
+# pip install openai PyPDF2
+
 import os
 import shutil
 import re
 import json
 import io
 import base64
+# Import the OpenAI module. Ensure the openai package is installed.
 from openai import OpenAI
+# Import classes for PDF processing. Install PyPDF2 if needed.
 from PyPDF2 import PdfReader, PdfWriter
 
-# Define source and destination directories for PDF files.
-SOURCE_DIR = r'C:\Users\Musta\Downloads\Documents\Thesis\Gem'
-DESTINATION_DIR = r'C:\Users\Musta\Downloads\Documents\Thesis\Gem\renamed'
+# ---------------------------------------------------------------------------
+# Set your source and destination directories.
+# Replace the placeholder paths with your actual directories.
+# For example:
+# SOURCE_DIR = r'/path/to/your/pdf/source/directory'
+# DESTINATION_DIR = r'/path/to/your/pdf/destination/directory'
+# ---------------------------------------------------------------------------
+SOURCE_DIR = r'/path/to/your/source/directory'
+DESTINATION_DIR = r'/path/to/your/destination/directory'
 
+# ---------------------------------------------------------------------------
 # Set your OpenAI API key.
-api_key = "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"
+# Replace "YOUR_API_KEY_HERE" with your actual OpenAI API key.
+# DO NOT commit your real API key to a public repository.
+# ---------------------------------------------------------------------------
+api_key = "YOUR_API_KEY_HERE"
 client = OpenAI(api_key=api_key)
 
 if not api_key:
-    raise ValueError("OpenAI API key not found. Please set the OPENAI_API_KEY.")
+    raise ValueError("OpenAI API key not found. Please set the api_key variable.")
 
+# ---------------------------------------------------------------------------
+# Function: extract_first_page_pdf_to_base64
+#
+# Extracts the first page of a PDF and returns it as a base64 encoded string.
+# This is useful if you need to send the page as a compact string.
+# ---------------------------------------------------------------------------
 def extract_first_page_pdf_to_base64(pdf_path):
-    """
-    Extracts the first page of a PDF and converts it to a base64 string.
-    """
     try:
+        # Read the PDF file.
         reader = PdfReader(pdf_path)
         writer = PdfWriter()
+        # Add the first page to the writer.
         writer.add_page(reader.pages[0])
+        # Write the page to a bytes buffer.
         buffer = io.BytesIO()
         writer.write(buffer)
         pdf_bytes = buffer.getvalue()
+        # Encode the bytes to a base64 string.
         base64_string = base64.b64encode(pdf_bytes).decode('utf-8')
         print(f"Extracted base64 string from the first page of: {pdf_path}")
         return base64_string
@@ -36,10 +58,13 @@ def extract_first_page_pdf_to_base64(pdf_path):
         print(f"Error extracting base64 from {pdf_path}: {e}")
         return ""
 
+# ---------------------------------------------------------------------------
+# Function: extract_first_page_text
+#
+# Extracts text from the first page of a PDF.
+# Limits the text to a maximum number of characters (default 3000).
+# ---------------------------------------------------------------------------
 def extract_first_page_text(pdf_path, max_chars=3000):
-    """
-    Extracts text from the first page of a PDF file.
-    """
     try:
         print(f"Extracting text from the first page of: {pdf_path}")
         reader = PdfReader(pdf_path)
@@ -56,11 +81,14 @@ def extract_first_page_text(pdf_path, max_chars=3000):
         print(f"Error extracting text from {pdf_path}: {e}")
         return ""
 
+# ---------------------------------------------------------------------------
+# Function: infer_metadata
+#
+# Uses OpenAI's model to extract metadata (Author, Title, Year) from the given text.
+# The model is called with temperature=0 to ensure consistent output.
+# The response should be valid JSON in a fixed format.
+# ---------------------------------------------------------------------------
 def infer_metadata(text):
-    """
-    Uses OpenAI's GPT-4o_mini to extract Author, Title, and Year from the text.
-    The model is called with temperature=0 and instructed to return only valid JSON.
-    """
     try:
         prompt = (
             "Extract the Author, Title, and Year of publication from the following text. "
@@ -81,10 +109,13 @@ def infer_metadata(text):
             ],
             temperature=0
         )
+        # Get the response message from the assistant.
         assistant_message = completion.choices[0].message.content
+        # Remove any markdown formatting if present.
         assistant_message = re.sub(r'```json\n|\n```|```', '', assistant_message)
         print("Received response from OpenAI GPT-4o_mini:")
         print(assistant_message)
+        # Parse the assistant's message into JSON.
         metadata_json = json.loads(assistant_message)
         metadata = {
             "Author": metadata_json.get("Author", "NULL").strip(),
@@ -101,17 +132,21 @@ def infer_metadata(text):
         print(f"Error during metadata inference: {e}")
         return {"Author": "NULL", "Title": "NULL", "Year": "NULL"}
 
+# ---------------------------------------------------------------------------
+# Function: sanitize_string
+#
+# Removes characters that are not allowed in file names.
+# ---------------------------------------------------------------------------
 def sanitize_string(s):
-    """
-    Removes characters that are invalid in file names.
-    """
     return re.sub(r'[\\/*?:"<>|]', "", s)
 
+# ---------------------------------------------------------------------------
+# Function: parse_authors
+#
+# Parses a string of authors into a list.
+# Checks for common delimiters such as semicolons or the word " and ".
+# ---------------------------------------------------------------------------
 def parse_authors(author_str):
-    """
-    Parses the author string into a list of authors.
-    Checks for semicolons or " and " as delimiters.
-    """
     if ';' in author_str:
         authors = [a.strip() for a in author_str.split(';') if a.strip()]
         return authors
@@ -133,20 +168,24 @@ def parse_authors(author_str):
         else:
             return [author_str.strip()]
 
+# ---------------------------------------------------------------------------
+# Function: reformat_single_author
+#
+# Converts "Last, First" to "First Last" if necessary.
+# ---------------------------------------------------------------------------
 def reformat_single_author(author_str):
-    """
-    Converts "Last, First" format to "First Last" if needed.
-    """
     if ',' in author_str:
         parts = [p.strip() for p in author_str.split(',')]
         if len(parts) >= 2:
             return f"{parts[1]} {parts[0]}"
     return author_str
 
+# ---------------------------------------------------------------------------
+# Function: get_last_name
+#
+# Extracts the last name from a full author name.
+# ---------------------------------------------------------------------------
 def get_last_name(author):
-    """
-    Extracts the last name from a full author name.
-    """
     author = author.strip()
     if ',' in author:
         return author.split(',')[0].strip()
@@ -155,17 +194,21 @@ def get_last_name(author):
         return name_parts[-1].strip()
     return author
 
+# ---------------------------------------------------------------------------
+# Function: rename_and_move_pdf
+#
+# Renames and moves the PDF file based on the inferred metadata.
+# The new file name follows the format: <Author> <Year>--<Title>.pdf.
+# If multiple authors exist, uses the last name of the first author plus "et al.".
+# ---------------------------------------------------------------------------
 def rename_and_move_pdf(original_path, metadata, destination_root):
-    """
-    Renames and moves the PDF file based on the inferred metadata.
-    The filename format is: <Author> <Year>--<Title>.pdf.
-    If multiple authors are detected, the last name of the first author is used plus "et al.".
-    """
     try:
+        # Remove invalid characters from metadata strings.
         author_raw = sanitize_string(metadata["Author"])
         title = sanitize_string(metadata["Title"])
         year = sanitize_string(metadata["Year"])
 
+        # Build the new file name.
         if not author_raw or author_raw.upper() == "NULL":
             new_filename_base = f"NULL-{year}-{title}"
         else:
@@ -179,42 +222,57 @@ def rename_and_move_pdf(original_path, metadata, destination_root):
                 author_citation = single_author
             new_filename_base = f"{author_citation} {year}--{title}"
 
+        # Append .pdf extension if not already present.
         new_filename = new_filename_base
         if not new_filename.lower().endswith('.pdf'):
             new_filename += '.pdf'
 
+        # Ensure the destination directory exists.
         os.makedirs(destination_root, exist_ok=True)
         new_path = os.path.join(destination_root, new_filename)
 
+        # Check for duplicates.
         if os.path.exists(new_path):
             print(f"Duplicate file '{new_filename}' already exists. Skipping '{original_path}'.")
             return
 
+        # Move the file to the destination with the new name.
         shutil.move(original_path, new_path)
         print(f"Moved: '{original_path}' -> '{new_path}'")
     except Exception as e:
         print(f"Error renaming/moving '{original_path}': {e}")
 
+# ---------------------------------------------------------------------------
+# Function: process_pdf
+#
+# Processes a single PDF file by extracting the first page as both text and
+# a base64 string, inferring metadata from the text, and renaming/moving the file.
+# ---------------------------------------------------------------------------
 def process_pdf(pdf_path):
-    """
-    Processes a single PDF file.
-    It extracts the first page (as base64 and text), infers metadata, and renames the file.
-    """
     print(f"\nProcessing '{pdf_path}'...")
+    # Extract the first page as a base64 string.
     base64_data = extract_first_page_pdf_to_base64(pdf_path)
+    # Extract text from the first page.
     extracted_text = extract_first_page_text(pdf_path)
     if not extracted_text.strip():
         print(f"No text extracted from '{pdf_path}'. Skipping...")
         return
+    # Infer metadata from the extracted text.
     metadata = infer_metadata(extracted_text)
     print(f"Inferred Metadata: {metadata}")
+    # Rename and move the file based on the metadata.
     rename_and_move_pdf(pdf_path, metadata, DESTINATION_DIR)
 
+# ---------------------------------------------------------------------------
+# Function: process_directory
+#
+# Processes all PDF files in the source directory.
+# Iterates over each file and calls process_pdf.
+# ---------------------------------------------------------------------------
 def process_directory():
-    """
-    Processes all PDF files in the source directory.
-    """
+    # Ensure the destination directory exists.
     os.makedirs(DESTINATION_DIR, exist_ok=True)
+    # List all PDF files in the source directory.
     pdf_files = [f for f in os.listdir(SOURCE_DIR)
                  if f.lower().endswith('.pdf') and os.path.isfile(os.path.join(SOURCE_DIR, f))]
     if not pdf_files:
@@ -227,6 +285,9 @@ def process_directory():
         process_pdf(pdf_path)
     print("\nProcessing complete!")
 
+# ---------------------------------------------------------------------------
+# Main block: Executes the script when run directly.
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print(f"Starting PDF processing from directory: {SOURCE_DIR}")
     print(f"Files will be moved to: {DESTINATION_DIR}")
